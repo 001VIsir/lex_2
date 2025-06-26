@@ -17,18 +17,18 @@ enum class TokenType {
 
 // 将TokenType转换为字符串以便打印
 std::map<TokenType, std::string> token_type_names = {
-    {TokenType::KEYWORD,         "Keyword"},
-    {TokenType::IDENTIFIER,      "Identifier"},
-    {TokenType::INTEGER_CONST,   "Integer Constant"},
-    {TokenType::FLOAT_CONST,     "Float Constant"},
-    {TokenType::CHAR_CONST,      "Char Constant"},
-    {TokenType::STRING_LITERAL,  "String Literal"},
-    {TokenType::OPERATOR,        "Operator"},
-    {TokenType::DELIMITER,       "Delimiter"},
-    {TokenType::COMMENT,         "Comment"},
-    {TokenType::PREPROCESSOR,    "Preprocessor"},
-    {TokenType::ERROR,           "Error"},
-    {TokenType::END_OF_FILE,     "EOF"}
+    {TokenType::KEYWORD,         "关键字"},
+    {TokenType::IDENTIFIER,      "标识符"},
+    {TokenType::INTEGER_CONST,   "整型常量"},
+    {TokenType::FLOAT_CONST,     "浮点型常量"},
+    {TokenType::CHAR_CONST,      "字符常量"},
+    {TokenType::STRING_LITERAL,  "字符串字面量"},
+    {TokenType::OPERATOR,        "运算符"},
+    {TokenType::DELIMITER,       "分隔符"},
+    {TokenType::COMMENT,         "注释"},
+    {TokenType::PREPROCESSOR,    "预处理器指令"},
+    {TokenType::ERROR,           "错误"},
+    {TokenType::END_OF_FILE,     "文件结束符"}
 };
 
 // Token结构体，用于存储单词信息
@@ -112,7 +112,7 @@ public:
             std::string error_val;
             error_val += current_char;
             tokens.push_back({TokenType::ERROR, error_val, line_});
-            errors_.push_back("Error at line " + std::to_string(line_) + ": Invalid character '" + error_val + "'");
+            errors_.push_back("错误在第 " + std::to_string(line_) + " 行: 无效字符 '" + error_val + "'");
             pos_++;
         }
         tokens.push_back({TokenType::END_OF_FILE, "EOF", line_});
@@ -155,7 +155,7 @@ private:
         }
 
         if (pos_ + 1 >= source_.length()) {
-            errors_.push_back("Error at line " + std::to_string(start_line) + ": Unterminated block comment.");
+            errors_.push_back("错误在第 " + std::to_string(start_line) + " 行: 未结束的块注释。");
             return {TokenType::ERROR, source_.substr(start_pos, pos_ - start_pos), start_line};
         }
         
@@ -213,7 +213,7 @@ private:
                 pos_++;
             }
             if (pos_ == exp_start) {
-                 errors_.push_back("Error at line " + std::to_string(line_) + ": Malformed number exponent.");
+                 errors_.push_back("错误在第 " + std::to_string(line_) + " 行: 格式错误的数字指数。");
                  return {TokenType::ERROR, source_.substr(start_pos, pos_ - start_pos), line_};
             }
         }
@@ -237,7 +237,7 @@ private:
             pos_++;
         }
         if (pos_ >= source_.length()) {
-            errors_.push_back("Error at line " + std::to_string(start_line) + ": Unterminated string literal.");
+            errors_.push_back("错误在第 " + std::to_string(start_line) + " 行: 未结束的字符串字面量。");
             return {TokenType::ERROR, source_.substr(start_pos, pos_ - start_pos), start_line};
         }
         pos_++; // Skip closing '"'
@@ -253,19 +253,19 @@ private:
                 pos_++;
             }
             if (source_[pos_] == '\n') {
-                 errors_.push_back("Error at line " + std::to_string(line_) + ": Newline in character constant.");
+                 errors_.push_back("错误在第 " + std::to_string(line_) + " 行: 字符常量中存在换行符。");
                  break;
             }
             pos_++;
         }
         if (pos_ >= source_.length() || source_[pos_] != '\'') {
-            errors_.push_back("Error at line " + std::to_string(start_line) + ": Unterminated character literal.");
+            errors_.push_back("错误在第 " + std::to_string(start_line) + " 行: 未结束的字符字面量。");
             return {TokenType::ERROR, source_.substr(start_pos, pos_ - start_pos), start_line};
         }
         pos_++; // Skip closing '''
         std::string value = source_.substr(start_pos, pos_ - start_pos);
         if (value.length() > 4 || (value.length() > 3 && value[1] != '\\') || value.length() < 3) {
-             errors_.push_back("Error at line " + std::to_string(start_line) + ": Invalid character literal " + value);
+             errors_.push_back("错误在第 " + std::to_string(start_line) + " 行: 无效的字符字面量 " + value);
         }
         return {TokenType::CHAR_CONST, value, start_line};
     }
@@ -306,10 +306,10 @@ private:
 void print_report(const std::vector<Token>& tokens, const Lexer& lexer) {
     std::map<TokenType, int> counts;
 
-    std::cout << "\n--- Lexical Analysis Tokens ---\n";
-    std::cout << std::left << std::setw(10) << "Line"
-              << std::setw(20) << "Type"
-              << "Value\n";
+    std::cout << "\n--- 词法分析结果 ---\n";
+    std::cout << std::left << std::setw(10) << "行号"
+              << std::setw(20) << "类型"
+              << "值\n";
     std::cout << "--------------------------------------------------\n";
 
     for (const auto& token : tokens) {
@@ -323,21 +323,21 @@ void print_report(const std::vector<Token>& tokens, const Lexer& lexer) {
         }
     }
     
-    std::cout << "\n--- Lexical Errors ---\n";
+    std::cout << "\n--- 词法错误 ---\n";
     const auto& errors = lexer.get_errors();
     if (errors.empty()) {
-        std::cout << "No lexical errors found.\n";
+        std::cout << "未发现词法错误。\n";
     } else {
         for (const auto& err : errors) {
             std::cout << err << "\n";
         }
     }
 
-    std::cout << "\n--- Statistics Summary ---\n";
-    std::cout << "Total Lines: " << lexer.get_line_count() << "\n";
-    std::cout << "Total Characters: " << lexer.get_char_count() << "\n";
-    std::cout << "Total Tokens (excluding comments and EOF): " << tokens.size() - counts[TokenType::COMMENT] - 1 << "\n";
-    std::cout << "\nToken Counts by Type:\n";
+    std::cout << "\n--- 统计摘要 ---\n";
+    std::cout << "总行数: " << lexer.get_line_count() << "\n";
+    std::cout << "总字符数: " << lexer.get_char_count() << "\n";
+    std::cout << "总记号数 (不含注释和文件结束符): " << tokens.size() - counts[TokenType::COMMENT] - 1 << "\n";
+    std::cout << "\n各类型记号统计:\n";
     for (const auto& pair : counts) {
         if (pair.first != TokenType::END_OF_FILE && pair.first != TokenType::COMMENT) {
             std::cout << "  " << std::left << std::setw(20) << token_type_names[pair.first] << ": " << pair.second << "\n";
@@ -347,19 +347,19 @@ void print_report(const std::vector<Token>& tokens, const Lexer& lexer) {
 
 int main() {
     std::string filename;
-    std::cout << "Enter the path to the C source file: ";
+    std::cout << "请输入C源文件路径: ";
     std::cin >> filename;
 
     std::ifstream file(filename);
     if (!file.is_open()) {
-        std::cerr << "Error: Could not open file '" << filename << "'\n";
+        std::cerr << "错误: 无法打开文件 '" << filename << "'\n";
         return 1;
     }
 
     std::string source_code((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
     file.close();
 
-    std::cout << "Analyzing file: " << filename << "\n";
+    std::cout << "正在分析文件: " << filename << "\n";
 
     Lexer lexer(source_code);
     std::vector<Token> tokens = lexer.analyze();
@@ -370,39 +370,39 @@ int main() {
 }
 
 /*
---- HOW TO USE ---
-1. Compile this file (main.cpp) using a C++ compiler (e.g., g++ main.cpp -o lexer -std=c++11).
-2. Create a C source file, for example, 'test.c'.
-3. Copy the example C code below into 'test.c'.
-4. Run the compiled program: ./lexer
-5. When prompted, enter the path to your C file: test.c
+--- 如何使用 ---
+1. 使用C++编译器编译此文件 (main.cpp) (例如: g++ main.cpp -o lexer -std=c++11)。
+2. 创建一个C源文件, 例如 'test.c'。
+3. 将下面的示例C代码复制到 'test.c' 中。
+4. 运行编译后的程序: ./lexer
+5. 当提示时, 输入您的C文件路径: test.c
 
---- Example test.c file ---
+--- 示例 test.c 文件 ---
 
 #include <stdio.h>
 
-// This is a single line comment.
+// 这是一个单行注释。
 int main() {
     int a = 10;
     float b = 20.5;
     char c = 'x';
     
-    // This is a block comment
-    // that spans multiple lines.
+    /* 这是一个块注释
+       跨越多行。 */
     
-    if (a > 5) {
-        printf("Hello, World!\\n");
-    }
-    
-    // Lexical errors
-    int invalid_num = 1.2.3;
-    char* unclosed_str = "hello;
-    int bad$char = 5;
-    
-    return 0;
-}
+//     if (a > 5) {
+//         printf("Hello, World!\\n");
+//     }
+//
+//     // 词法错误
+//     int invalid_num = 1.2.3;
+//     char* unclosed_str = "hello;
+//     int bad$char = 5;
+//
+//     return 0;
+// }
 
-// Unclosed block comment test
+// 未闭合的块注释测试
 /*
 
 */
