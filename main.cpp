@@ -55,7 +55,13 @@ const std::map<std::string, TokenType> keywords = {
 
 class Lexer {
 public:
-    Lexer(const std::string& source) : source_(source), pos_(0), line_(1), char_count_(source.length()) {}
+    Lexer(const std::string& source) : source_(source), pos_(0), line_(1), char_count_(0) {
+        // 正确计算实际字符数，而不是简单地使用字符串长度
+        for (const auto& c : source) {
+            // 如果需要排除换行符、制表符等，可以在这里添加条件
+            char_count_++;
+        }
+    }
 
     std::vector<Token> analyze() {
         std::vector<Token> tokens;
@@ -122,6 +128,8 @@ public:
     const std::vector<std::string>& get_errors() const { return errors_; }
     int get_line_count() const { return line_; }
     int get_char_count() const { return char_count_; }
+    // 额外添加获取原始文件大小的方法
+    int get_file_size() const { return source_.length(); }
 
 private:
     std::string source_;
@@ -137,6 +145,13 @@ private:
         return '\0';
     }
 
+    // 添加判断是否为运算符或分隔符的辅助函数
+    bool is_operator_or_delimiter(char c) {
+        std::string operators = "+-*/%=<>!&|^~.";
+        std::string delimiters = "(){}[];,";
+        return operators.find(c) != std::string::npos || delimiters.find(c) != std::string::npos;
+    }
+
     Token skip_line_comment() {
         size_t start_pos = pos_;
         while (pos_ < source_.length() && source_[pos_] != '\n') {
@@ -149,6 +164,7 @@ private:
         size_t start_pos = pos_;
         int start_line = line_;
         pos_ += 2; // Skip '/*'
+        
         while (pos_ + 1 < source_.length() && (source_[pos_] != '*' || source_[pos_ + 1] != '/')) {
             if (source_[pos_] == '\n') line_++;
             pos_++;
@@ -192,16 +208,39 @@ private:
     Token get_number() {
         size_t start_pos = pos_;
         bool is_float = false;
+        bool has_error = false;
+        std::string error_message;
+
+        // 处理整数部分
         while (pos_ < source_.length() && isdigit(source_[pos_])) {
             pos_++;
         }
+
+        // 处理小数部分
         if (pos_ < source_.length() && source_[pos_] == '.') {
             is_float = true;
             pos_++;
+            
+            if (pos_ < source_.length() && !isdigit(source_[pos_])) {
+                has_error = true;
+                error_message = "小数点后需要数字";
+            }
+            
             while (pos_ < source_.length() && isdigit(source_[pos_])) {
                 pos_++;
             }
+            
+            // 检测多个小数点
+            if (pos_ < source_.length() && source_[pos_] == '.') {
+                has_error = true;
+                error_message = "无效的数字格式：多个小数点";
+                while (pos_ < source_.length() && (isdigit(source_[pos_]) || source_[pos_] == '.')) {
+                    pos_++;
+                }
+            }
         }
+
+        // 处理指数部分
         if (pos_ < source_.length() && (source_[pos_] == 'e' || source_[pos_] == 'E')) {
             is_float = true;
             pos_++;
@@ -213,12 +252,27 @@ private:
                 pos_++;
             }
             if (pos_ == exp_start) {
-                 errors_.push_back("错误在第 " + std::to_string(line_) + " 行: 格式错误的数字指数。");
-                 return {TokenType::ERROR, source_.substr(start_pos, pos_ - start_pos), line_};
+                has_error = true;
+                error_message = "格式错误的数字指数";
+            }
+        }
+
+        // 检测数字后面直接跟字母的情况
+        if (pos_ < source_.length() && (isalpha(source_[pos_]) || source_[pos_] == '_')) {
+            has_error = true;
+            error_message = "非法标识符：数字后直接跟字母";
+            while (pos_ < source_.length() && (isalnum(source_[pos_]) || source_[pos_] == '_')) {
+                pos_++;
             }
         }
 
         std::string value = source_.substr(start_pos, pos_ - start_pos);
+        
+        if (has_error) {
+            errors_.push_back("错误在第 " + std::to_string(line_) + " 行: " + error_message + ": " + value);
+            return {TokenType::ERROR, value, line_};
+        }
+        
         if (is_float) {
             return {TokenType::FLOAT_CONST, value, line_};
         }
@@ -229,17 +283,28 @@ private:
         size_t start_pos = pos_;
         int start_line = line_;
         pos_++; // Skip opening '"'
+        
         while (pos_ < source_.length() && source_[pos_] != '\"') {
             if (source_[pos_] == '\\') { // Handle escape sequences
                 pos_++;
+                if (pos_ >= source_.length()) {
+                    break;
+                }
             }
-            if (source_[pos_] == '\n') line_++;
+            if (source_[pos_] == '\n') {
+                line_++;
+                // 检测到换行，表示字符串没有正确闭合
+                errors_.push_back("错误在第 " + std::to_string(start_line) + " 行: 字符串字面量中存在换行符，可能未闭合。");
+                return {TokenType::ERROR, source_.substr(start_pos, pos_ - start_pos), start_line};
+            }
             pos_++;
         }
+        
         if (pos_ >= source_.length()) {
-            errors_.push_back("错误在第 " + std::to_string(start_line) + " 行: 未结束的字符串字面量。");
+            errors_.push_back("错误在第 " + std::to_string(start_line) + " 行: 未闭合的字符串字面量。");
             return {TokenType::ERROR, source_.substr(start_pos, pos_ - start_pos), start_line};
         }
+        
         pos_++; // Skip closing '"'
         return {TokenType::STRING_LITERAL, source_.substr(start_pos, pos_ - start_pos), start_line};
     }
@@ -248,31 +313,53 @@ private:
         size_t start_pos = pos_;
         int start_line = line_;
         pos_++; // Skip opening '''
+        
+        // 处理空字符常量
+        if (pos_ < source_.length() && source_[pos_] == '\'') {
+            pos_++; // 跳过闭合的单引号
+            errors_.push_back("错误在第 " + std::to_string(start_line) + " 行: 空的字符常量。");
+            return {TokenType::ERROR, "''", start_line};
+        }
+        
+        size_t char_count = 0;
+        bool has_escape = false;
+        
         while (pos_ < source_.length() && source_[pos_] != '\'') {
-            if (source_[pos_] == '\\') { // Handle escape sequences
+            char_count++;
+            if (source_[pos_] == '\\') { // 处理转义序列
+                has_escape = true;
                 pos_++;
+                if (pos_ >= source_.length()) {
+                    break;
+                }
+                char_count++; // 转义序列算作一个字符
             }
             if (source_[pos_] == '\n') {
-                 errors_.push_back("错误在第 " + std::to_string(line_) + " 行: 字符常量中存在换行符。");
-                 break;
+                line_++;
+                errors_.push_back("错误在第 " + std::to_string(start_line) + " 行: 字符常量中存在换行符。");
+                return {TokenType::ERROR, source_.substr(start_pos, pos_ - start_pos), start_line};
             }
             pos_++;
         }
-        if (pos_ >= source_.length() || source_[pos_] != '\'') {
-            errors_.push_back("错误在第 " + std::to_string(start_line) + " 行: 未结束的字符字面量。");
+        
+        if (pos_ >= source_.length()) {
+            errors_.push_back("错误在第 " + std::to_string(start_line) + " 行: 未闭合的字符字面量。");
             return {TokenType::ERROR, source_.substr(start_pos, pos_ - start_pos), start_line};
         }
+        
         pos_++; // Skip closing '''
         std::string value = source_.substr(start_pos, pos_ - start_pos);
-        if (value.length() > 4 || (value.length() > 3 && value[1] != '\\') || value.length() < 3) {
-             errors_.push_back("错误在第 " + std::to_string(start_line) + " 行: 无效的字符字面量 " + value);
+        
+        // 检查字符常量中的字符数量是否合法
+        if (!has_escape && char_count > 1) {
+            errors_.push_back("错误在第 " + std::to_string(start_line) + " 行: 字符常量中包含多个字符: " + value);
+            return {TokenType::ERROR, value, start_line};
+        } else if (has_escape && char_count > 2) {
+            errors_.push_back("错误在第 " + std::to_string(start_line) + " 行: 字符常量中包含多个字符: " + value);
+            return {TokenType::ERROR, value, start_line};
         }
+        
         return {TokenType::CHAR_CONST, value, start_line};
-    }
-
-    bool is_operator_or_delimiter(char c) {
-        std::string chars = "+-*/%<>=!&|~^(){}[];,.:?";
-        return chars.find(c) != std::string::npos;
     }
 
     Token get_operator_or_delimiter() {
@@ -368,41 +455,3 @@ int main() {
 
     return 0;
 }
-
-/*
---- 如何使用 ---
-1. 使用C++编译器编译此文件 (main.cpp) (例如: g++ main.cpp -o lexer -std=c++11)。
-2. 创建一个C源文件, 例如 'test.c'。
-3. 将下面的示例C代码复制到 'test.c' 中。
-4. 运行编译后的程序: ./lexer
-5. 当提示时, 输入您的C文件路径: test.c
-
---- 示例 test.c 文件 ---
-
-#include <stdio.h>
-
-// 这是一个单行注释。
-int main() {
-    int a = 10;
-    float b = 20.5;
-    char c = 'x';
-    
-    /* 这是一个块注释
-       跨越多行。 */
-    
-//     if (a > 5) {
-//         printf("Hello, World!\\n");
-//     }
-//
-//     // 词法错误
-//     int invalid_num = 1.2.3;
-//     char* unclosed_str = "hello;
-//     int bad$char = 5;
-//
-//     return 0;
-// }
-
-// 未闭合的块注释测试
-/*
-
-*/
